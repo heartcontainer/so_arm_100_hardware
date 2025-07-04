@@ -49,6 +49,32 @@ CallbackReturn SOARM100Interface::on_init(const hardware_interface::HardwareInfo
     size_t num_joints = info_.joints.size();
     position_commands_.resize(num_joints, 0.0);
     position_states_.resize(num_joints, 0.0);
+    velocity_states_.resize(num_joints, 0.0);
+
+    zero_positions_.resize(num_joints, 2048);
+    servo_directions_.resize(num_joints, 1);
+
+    for (int i = 0; i < num_joints; i++)
+    {
+        for (const auto &param : info_.joints[i].parameters)
+        {
+            if (param.first == "zero_position")
+            {
+                zero_positions_[i] = static_cast<int>(std::stoi(param.second));
+            }
+            else if (param.first == "direction")
+            {
+                servo_directions_[i] = static_cast<int>(std::stoi(param.second));
+                if (servo_directions_[i] != 1 && servo_directions_[i] != -1)
+                {
+                    throw std::runtime_error("Invalid direction for joint: " + info_.joints[i].name);
+                }
+            }
+        }
+    }
+    RCLCPP_INFO(rclcpp::get_logger("SOARM100Interface"),
+                "Initialized SOARM100Interface with %zu joints zero positions[%d,%d,%d,%d,%d,%d]", num_joints,
+                zero_positions_[0], zero_positions_[1], zero_positions_[2], zero_positions_[3], zero_positions_[4], zero_positions_[5]);
 
     return CallbackReturn::SUCCESS;
 }
@@ -59,6 +85,7 @@ std::vector<hardware_interface::StateInterface> SOARM100Interface::export_state_
     for (size_t i = 0; i < info_.joints.size(); i++)
     {
         state_interfaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &position_states_[i]);
+        state_interfaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &velocity_states_[i]);
     }
     return state_interfaces;
 }
@@ -108,6 +135,9 @@ CallbackReturn SOARM100Interface::on_activate(const rclcpp_lifecycle::State & /*
                 // calibrate_servo(servo_id, pos);
                 position_states_[i] = ticks_to_radians(pos, i);
                 position_commands_[i] = position_states_[i];
+
+                velocity_states_[i] = st3215_.ReadSpeed(servo_id) * 2 * M_PI / 4096.0;
+
                 RCLCPP_INFO(rclcpp::get_logger("SOARM100Interface"), 
                            "Servo %d initialized at position %d", servo_id, pos);
             }
@@ -237,9 +267,9 @@ hardware_interface::return_type SOARM100Interface::read(const rclcpp::Time & tim
             if (st3215_.FeedBack(servo_id) != -1) {
                 int raw_pos = st3215_.ReadPos(servo_id);
                 position_states_[i] = ticks_to_radians(raw_pos, i);
-                
-                double speed = -1 * st3215_.ReadSpeed(servo_id) * 2 * M_PI / 4096.0;
-                double pwm = -1 * st3215_.ReadLoad(servo_id) / 10.0;
+                velocity_states_[i] = st3215_.ReadSpeed(servo_id) * 2 * M_PI / 4096.0;
+
+                double pwm = st3215_.ReadLoad(servo_id) / 10.0;
                 int move = st3215_.ReadMove(servo_id);
                 double temperature = st3215_.ReadTemper(servo_id);
                 double voltage = st3215_.ReadVoltage(servo_id) / 10;
@@ -247,7 +277,7 @@ hardware_interface::return_type SOARM100Interface::read(const rclcpp::Time & tim
 
                 RCLCPP_DEBUG(rclcpp::get_logger("SOARM100Interface"), 
                             "Servo %d: raw_pos=%d (%.2f rad) speed=%.2f pwm=%.2f temp=%.1f V=%.1f I=%.3f", 
-                            servo_id, raw_pos, position_states_[i], speed, pwm, temperature, voltage, current);
+                            servo_id, raw_pos, position_states_[i], velocity_states_[i], pwm, temperature, voltage, current);
             } else {
                 RCLCPP_WARN(rclcpp::get_logger("SOARM100Interface"), 
                            "Failed to read feedback from servo %d", servo_id);

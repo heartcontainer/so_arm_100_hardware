@@ -50,10 +50,11 @@ private:
   // Position command and state storage for all joints
   std::vector<double> position_commands_;
   std::vector<double> position_states_;
+  std::vector<double> velocity_states_;
 
   // Keep these until we fully transition to calibration
-  std::vector<int> zero_positions_{2048, 2048, 2048, 2048, 2048, 2048};  // Center positions
-  std::vector<int> servo_directions_{1, 1, 1, 1, 1, 1};  // Direction multipliers
+  std::vector<int> zero_positions_;  // Center positions
+  std::vector<int> servo_directions_;  // Direction multipliers
 
   // Calibration data
   struct JointCalibration {
