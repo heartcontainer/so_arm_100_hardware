@@ -53,9 +53,9 @@ namespace so_arm_100_controller
                 else if (param.first == "direction")
                 {
                     servo_direction = static_cast<int>(std::stoi(param.second));
-                    if (servo_direction != 0 && servo_direction != 1)
+                    if (servo_direction != -1 && servo_direction != 1)
                     {
-                        throw std::runtime_error("Invalid motor flip direction for joint: " +
+                        throw std::runtime_error("Invalid motor direction for joint: " +
                                                  joint.name);
                     }
                 }
