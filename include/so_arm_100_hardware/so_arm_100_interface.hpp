@@ -27,98 +27,53 @@
 namespace so_arm_100_controller
 {
 
-using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+  using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-class SOARM100Interface : public hardware_interface::SystemInterface
-{
-public:
-  SOARM100Interface();
-  virtual ~SOARM100Interface();
-
-  // LifecycleNodeInterface
-  CallbackReturn on_init(const hardware_interface::HardwareInfo &hardware_info) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
-
-  // SystemInterface
-  std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
-  std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
-  hardware_interface::return_type read(const rclcpp::Time & time, const rclcpp::Duration & period) override;
-  hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period) override;
-
-private:
-  // Position command and state storage for all joints
-  std::vector<double> position_commands_;
-  std::vector<double> position_states_;
-  std::vector<double> velocity_states_;
-
-  // Keep these until we fully transition to calibration
-  std::vector<int> zero_positions_;  // Center positions
-  std::vector<int> servo_directions_;  // Direction multipliers
-
-  // Calibration data
-  struct JointCalibration {
-    int min_ticks;
-    int center_ticks;
-    int max_ticks;
-    double range_ticks;
+  enum class ControlMode
+  {
+    POSITION = 1,
+    VELOCITY = 2,
+    TORQUE = 3
   };
-  std::map<std::string, JointCalibration> joint_calibration_;
 
-  // Communication configuration
-  bool use_serial_;
-  std::string serial_port_;
-  int serial_baudrate_;
+  struct Joint
+  {
+    int motor_id = 0; // Servo ID arm(1-6) base(7-9)
+    double position = 0.0;
+    double velocity = 0.0;
+    double effort = 0.0;
 
-  // Serial communication
-  int SerialPort;
-  struct termios tty;
-  int WriteToSerial(const unsigned char* buf, int nBytes);
-  int ReadSerial(unsigned char* buf, int nBytes);
-  bool ConfigureSerialPort();
+    double position_command = 0.0;
+    double velocity_command = 0.0;
+    double effort_command = 0.0;
 
-  // ROS interfaces
-  rclcpp::Node::SharedPtr node_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr command_publisher_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr feedback_subscriber_;
+    int zero_position = 2048; // Center positions
+    int servo_direction = 1;  // Direction multipliers
+    ControlMode control_mode = ControlMode::POSITION;
+  };
 
-  std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> executor_;
-  std::thread spin_thread_;
+  class SOARM100Interface : public hardware_interface::SystemInterface
+  {
+  public:
+    SOARM100Interface();
+    virtual ~SOARM100Interface();
 
-  // Store last received feedback message
-  sensor_msgs::msg::JointState::SharedPtr last_feedback_msg_;
-  std::mutex feedback_mutex_;
+    // LifecycleNodeInterface
+    CallbackReturn on_init(const hardware_interface::HardwareInfo &hardware_info) override;
+    CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
 
-  SMS_STS st3215_;
+    // SystemInterface
+    std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+    std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
+    hardware_interface::return_type read(const rclcpp::Time &time, const rclcpp::Duration &period) override;
+    hardware_interface::return_type write(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 
-  void feedback_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
+  private:
+    SMS_STS st3215_;
+    std::unordered_map<std::string, Joint> joints_;
+  };
 
-  // Calibration methods
-  void calibrate_servo(uint8_t servo_id, int current_pos);
-  double ticks_to_radians(int ticks, size_t servo_idx);
-  int radians_to_ticks(double radians, size_t servo_idx);
+} // namespace so_arm_100_controller
 
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr calib_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr torque_service_;
-
-  void calibration_callback(
-      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-      std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  
-  void torque_callback(
-      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-      std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-
-  void record_current_position();
-  void set_torque_enable(bool enable);
-
-  std::string last_calibration_data_;
-  bool torque_enabled_{true};
-
-  bool load_calibration(const std::string& filepath);
-  double normalize_position(const std::string& joint_name, int ticks);
-};
-
-}  // namespace so_arm_100_controller
-
-#endif  // SOARM100_INTERFACE_H
+#endif // SOARM100_INTERFACE_H
